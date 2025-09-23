@@ -1,0 +1,5 @@
+Sql Queries
+
+
+SELECT * FROM gold_prices_2 LEFT JOIN currencies ON gold_prices_2.currency_id=currencies.id;
+SELECT * FROM 24K_gold LEFT JOIN currencies ON 24K_gold.currency_id=currencies.id

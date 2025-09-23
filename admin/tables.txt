@@ -1,0 +1,114 @@
+Tables snippest code 
+
+
+
+// functions.php (or Code Snippets plugin)
+function fetch_qatar_table_data($atts) {
+    $atts = shortcode_atts([
+        'name' => '', // table name, e.g. silver_prices_today
+    ], $atts);
+
+    if (empty($atts['name'])) return "⚠ No table name provided.";
+
+    // ✅ DB connection details
+    $servername = "localhost:3307";
+    $username   = "root";
+    $password   = "";          
+    $dbname     = "qatar";     
+
+    $conn = new mysqli($servername, $username, $password, $dbname);
+    if ($conn->connect_error) {
+        return "❌ Connection failed: " . $conn->connect_error;
+    }
+
+    // detect table + filter
+    $parts = explode("_", $atts['name']);
+    $table = $conn->real_escape_string($parts[0] . "_" . $parts[1]); 
+    $filter = isset($parts[2]) ? $parts[2] : '';
+
+    // ✅ Build SQL
+    if ($filter === "today") {
+        $sql = "SELECT * FROM {$table} WHERE DATE(created_at) = CURDATE() ORDER BY created_at DESC";
+    } elseif ($filter === "history") {
+        $sql = "SELECT *, DATE_FORMAT(created_at, '%d-%b-%Y') as formatted_date 
+                FROM {$table} 
+                WHERE DATE(created_at) < CURDATE() 
+                ORDER BY created_at DESC";
+    } else {
+        $sql = "SELECT * FROM {$table} ORDER BY created_at DESC";
+    }
+
+    $result = $conn->query($sql);
+    if (!$result || $result->num_rows === 0) {
+        return "⚠ No {$filter} records found in {$table}";
+    }
+
+    // ✅ Get column names
+    $fields = [];
+    while ($field = $result->fetch_field()) {
+        $fields[] = $field->name;
+    }
+// Reorder columns based on filter
+if ($filter === "history") {
+    $ordered = [];
+
+    // Always start with Date
+    if (in_array("formatted_date", $fields)) $ordered[] = "formatted_date";
+
+    // If Gemstone exists, show after Date
+    if (in_array("Gemstone", $fields)) $ordered[] = "Gemstone";
+
+    // Then whichever exists among Quantity / Weight / Length
+    if (in_array("Quantity", $fields)) $ordered[] = "Quantity";
+    if (in_array("Weight", $fields)) $ordered[] = "Weight";
+    if (in_array("Length", $fields)) $ordered[] = "Length";
+
+    // Finally Currency and Price
+    if (in_array("Currency", $fields)) $ordered[] = "Currency";
+    if (in_array("Price", $fields)) $ordered[] = "Price";
+
+} else {
+    $ordered = [];
+
+    // Today’s table logic
+    if (in_array("Quantity", $fields)) {
+        $ordered[] = "Quantity";
+    } elseif (in_array("Gemstone", $fields)) {
+        $ordered[] = "Gemstone";
+    }
+
+    if (in_array("Weight", $fields)) $ordered[] = "Weight";
+    if (in_array("Length", $fields)) $ordered[] = "Length";
+    if (in_array("Currency", $fields)) $ordered[] = "Currency";
+    if (in_array("Price", $fields)) $ordered[] = "Price";
+}
+
+    $thColor = ($filter === "today") ? "red" : "#073A64";
+
+    // ✅ Build HTML table
+    $html = "<table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse; width:100%; text-align:center;'>";
+    $html .= "<tr>";
+    foreach ($ordered as $col) {
+        $colName = ($col === "formatted_date") ? "Date" : $col;
+        $html .= "<th style='background:{$thColor}; color:white; text-align:center;'>" . htmlspecialchars($colName) . "</th>";
+    }
+    $html .= "</tr>";
+
+    while ($row = $result->fetch_assoc()) {
+        $html .= "<tr>";
+        foreach ($ordered as $col) {
+            $val = isset($row[$col]) ? $row[$col] : "";
+            $html .= "<td style='text-align:center;'>" . htmlspecialchars($val) . "</td>";
+        }
+        $html .= "</tr>";
+    }
+    $html .= "</table>";
+
+    $conn->close();
+    return $html;
+}
+add_shortcode('qatar_table', 'fetch_qatar_table_data');
+
+[qatar_table name=gold_prices_today]
+[qatar_table name=gold_prices_history]
+

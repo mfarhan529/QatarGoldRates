@@ -1,0 +1,167 @@
+24K Gold table snippest code
+
+// ✅ DB Connection (same as your other snippet)
+function get_qatar_db_connection() {
+    $servername = "localhost:3307";
+    $username   = "root";
+    $password   = "";
+    $dbname     = "qatar";
+
+    $conn = new mysqli($servername, $username, $password, $dbname);
+    if ($conn->connect_error) {
+        die("❌ Connection failed: " . $conn->connect_error);
+    }
+    return $conn;
+}
+
+
+// ✅ Today Table Shortcode
+function shortcode_today_24_carat_gold() {
+    $conn = get_qatar_db_connection();
+    $today = date('Y-m-d');
+
+    $sql = "
+        SELECT Weight,
+               MAX(CASE WHEN Currency='QAR' THEN Prices END) AS QAR,
+               MAX(CASE WHEN Currency='USD' THEN Prices END) AS USD,
+               MAX(CASE WHEN Currency='INR' THEN Prices END) AS INR
+        FROM `24_carat_gold`
+        WHERE DATE(created_at) = '$today'
+        GROUP BY Weight
+        ORDER BY FIELD(Weight, '1 Gram','1 Tola','1 Ounce','10 Grams')
+    ";
+    $result = $conn->query($sql);
+
+    if (!$result || $result->num_rows == 0) {
+        return "<p style='color:red;text-align:center;'>No rates found for today.</p>";
+    }
+
+    ob_start();
+    ?>
+    <table class="gold-table">
+        <thead>
+            <tr>
+                <th>Weight</th>
+                <th>Price (QAR)</th>
+                <th>Price (USD)</th>
+                <th>Price (INR)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php while ($row = $result->fetch_assoc()): ?>
+            <tr>
+                <td><?= htmlspecialchars($row['Weight']); ?></td>
+                <td><?= $row['QAR'] ? "QAR " . number_format($row['QAR'], 2) : "-"; ?></td>
+                <td><?= $row['USD'] ? "$ " . number_format($row['USD'], 2) : "-"; ?></td>
+                <td><?= $row['INR'] ? "₹ " . number_format($row['INR'], 2) : "-"; ?></td>
+            </tr>
+            <?php endwhile; ?>
+        </tbody>
+    </table>
+    <style>
+        .gold-table {
+            width:100%;
+            border-collapse: collapse;
+            margin:20px 0;
+            font-size:15px;
+            background:#fff;
+            box-shadow:0 4px 12px rgba(0,0,0,0.08);
+        }
+        .gold-table th, .gold-table td {
+            border:1px solid #ddd;
+            padding:10px 12px;
+            text-align:center;
+        }
+        .gold-table th {
+            background:#EC0024;
+            color:#fff;
+        }
+        .gold-table tr:nth-child(even) {
+            background:#f9f9f9;
+        }
+    </style>
+    <?php
+    $conn->close();
+    return ob_get_clean();
+}
+add_shortcode("today_24_carat_gold", "shortcode_today_24_carat_gold");
+
+// ✅ History Table Shortcode (Pivot Style with Delete Button)
+function shortcode_history_24_carat_gold() {
+    $conn = get_qatar_db_connection();
+
+    $sql = "
+        SELECT DATE(created_at) AS PriceDate,
+            MAX(CASE WHEN Weight = '1 Gram'  THEN Prices END)  AS `1_Gram`,
+            MAX(CASE WHEN Weight = '1 Tola'  THEN Prices END)  AS `1_Tola`,
+            MAX(CASE WHEN Weight = '1 Ounce' THEN Prices END)  AS `1_Ounce`
+        FROM `24_carat_gold`
+        WHERE created_at < NOW() - INTERVAL 1 DAY
+          AND Currency = 'QAR'
+        GROUP BY DATE(created_at)
+        ORDER BY PriceDate DESC
+    ";
+    $result = $conn->query($sql);
+
+    ob_start();
+    ?>
+    <!-- ✅ History 24 Carat Gold Prices -->
+    <div class="history-table">
+      <table class="gold-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>1 Gram</th>
+            <th>1 Tola</th>
+            <th>1 Ounce</th>
+          
+          </tr>
+        </thead>
+        <tbody>
+        <?php  
+        if ($result && $result->num_rows > 0) { 
+            while ($row = $result->fetch_assoc()) { 
+                $formatted_date = date("d-M-Y", strtotime($row['PriceDate']));
+        ?>
+          <tr>
+            <td><?= $formatted_date ?></td>
+            <td><?= $row['1_Gram']  ? 'QAR ' . number_format($row['1_Gram'], 2) : '-' ?></td>
+            <td><?= $row['1_Tola']  ? 'QAR ' . number_format($row['1_Tola'], 2) : '-' ?></td>
+            <td><?= $row['1_Ounce'] ? 'QAR ' . number_format($row['1_Ounce'], 2) : '-' ?></td>
+           
+          </tr>
+        <?php } 
+        } else { ?>
+          <tr><td colspan="5" style="text-align:center;">No historical data available</td></tr>
+        <?php } ?>
+        </tbody>
+      </table>
+    </div>
+
+    <style>
+      .gold-table {
+          width:100%;
+          border-collapse: collapse;
+          margin:20px 0;
+          font-size:15px;
+          background:#fff;
+          box-shadow:0 4px 12px rgba(0,0,0,0.08);
+      }
+      .gold-table th, .gold-table td {
+          border:1px solid #ddd;
+          padding:10px 12px;
+          text-align:center;
+      }
+      
+      .gold-table tr:nth-child(even) {
+          background:#f9f9f9;
+      }
+      .history-table th{
+		  background:#073A64;
+	  }
+    </style>
+    <?php
+    $conn->close();
+    return ob_get_clean();
+}
+add_shortcode("history_24_carat_gold", "shortcode_history_24_carat_gold");

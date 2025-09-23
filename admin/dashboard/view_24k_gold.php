@@ -1,0 +1,173 @@
+<?php
+session_start();
+
+// ✅ Check if user is logged in
+if (!isset($_SESSION['admin'])) {
+    header("Location: ../");
+    exit();
+}
+
+include '../includes/db.php';
+
+// ✅ Fetch all currencies
+$currencies = [];
+$currency_sql = "SELECT id, Symbol FROM currencies ORDER BY id ASC";
+$currency_result = $conn->query($currency_sql);
+
+if ($currency_result && $currency_result->num_rows > 0) {
+    while ($c = $currency_result->fetch_assoc()) {
+        $currencies[$c['id']] = $c['Symbol']; // map id => Symbol
+    }
+}
+
+// ✅ Today’s data (last 24h)
+$today_sql = "SELECT g.id AS gold_id, g.Weight, g.currency_id, g.Purity, g.Prices, g.created_at, c.Symbol
+              FROM 24k_gold g
+              LEFT JOIN currencies c ON g.currency_id = c.id
+              WHERE g.created_at >= NOW() - INTERVAL 1 DAY
+              ORDER BY g.Weight ASC, g.Purity ASC, g.currency_id ASC";
+$today_result = $conn->query($today_sql);
+
+// ✅ History data (older than 24h)
+$history_sql = "SELECT g.id AS gold_id, g.Weight, g.currency_id, g.Purity, g.Prices, g.created_at, c.Symbol
+                FROM 24k_gold g
+                LEFT JOIN currencies c ON g.currency_id = c.id
+                WHERE g.created_at < NOW() - INTERVAL 1 DAY
+                ORDER BY g.Weight ASC, g.Purity ASC, g.currency_id ASC";
+$history_result = $conn->query($history_sql);
+
+// ✅ Group rows by Weight + Purity
+function groupByWeightPurity($result) {
+    $data = [];
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $key = $row['Weight'] . '-' . $row['Purity'];
+            if (!isset($data[$key])) {
+                $data[$key] = [
+                    'id' => $row['gold_id'],
+                    'Weight' => $row['Weight'],
+                    'Purity' => $row['Purity'],
+                    'prices' => []
+                ];
+            }
+            $data[$key]['prices'][$row['currency_id']] = $row['Prices'];
+        }
+    }
+    return $data;
+}
+
+$today_data   = groupByWeightPurity($today_result);
+$history_data = groupByWeightPurity($history_result);
+?>
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>View 24k Gold Rates</title>
+</head>
+<body>
+
+<?php include '../includes/sidebar.php'; ?>
+<div class="table-wrapper">
+
+  <!-- ✅ Success message -->
+  <?php if (isset($_GET['success'])): ?>
+    <p class="success-msg">✅ 24k Gold rate added successfully!</p>
+  <?php endif; ?>
+
+  <!-- ✅ Today’s 24k Gold Prices -->
+  <div class="table-container">
+    <h2>📊 Today’s 24k Gold Prices</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Purity</th>
+          <th>Weight</th>
+          <?php foreach ($currencies as $symbol): ?>
+            <th><?= htmlspecialchars($symbol) ?></th>
+          <?php endforeach; ?>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if (!empty($today_data)): ?>
+          <?php foreach ($today_data as $info): ?>
+            <tr>
+              <td><?= htmlspecialchars($info['Purity']) ?></td>
+              <td><?= htmlspecialchars($info['Weight']) ?></td>
+              <?php foreach ($currencies as $cid => $symbol): ?>
+                <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
+              <?php endforeach; ?>
+              <td><a href="edit_24k_gold.php?id=<?= $info['id'] ?>" title="Edit">✏️</a></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <tr><td colspan="<?= count($currencies) + 3 ?>" style="text-align:center;">❌ No records found for Today</td></tr>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ✅ History 24k Gold Prices -->
+  <div class="table-container">
+    <h2>📜 History 24k Gold Prices</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Purity</th>
+          <th>Weight</th>
+          <?php foreach ($currencies as $symbol): ?>
+            <th><?= htmlspecialchars($symbol) ?></th>
+          <?php endforeach; ?>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if (!empty($history_data)): ?>
+          <?php foreach ($history_data as $info): ?>
+            <tr>
+              <td><?= htmlspecialchars($info['Purity']) ?></td>
+              <td><?= htmlspecialchars($info['Weight']) ?></td>
+              <?php foreach ($currencies as $cid => $symbol): ?>
+                <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
+              <?php endforeach; ?>
+              <td><a href="edit_24k_gold.php?id=<?= $info['id'] ?>" title="Edit">✏️</a></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <tr><td colspan="<?= count($currencies) + 3 ?>" style="text-align:center;">❌ No historical data found</td></tr>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 0; }
+  .table-wrapper { margin-left: 400px; padding: 40px 20px; width: 1000px; }
+  .table-container { background: #fff; padding: 25px; border-radius: 14px; margin-bottom: 40px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+  h2 { text-align: center; margin-bottom: 20px; color: #1e3a8a; font-size: 24px; font-weight: 700; }
+  .success-msg { text-align: center; background: #d1fae5; color: #065f46; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: #1e3a8a; color: #fff; }
+  th, td { padding: 12px 14px; border: 1px solid #ddd; text-align: center; }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  tbody tr:hover { background: #eef2ff; }
+  a { text-decoration: none; font-size: 18px; color: #1e3a8a; }
+  a:hover { color: #0d1a3a; }
+</style>
+
+<script>
+document.querySelectorAll('.dropdown-toggle').forEach(item => {
+  item.addEventListener('click', function(e) {
+    e.preventDefault();
+    this.parentElement.classList.toggle('open');
+  });
+});
+</script>
+
+</body>
+</html>
