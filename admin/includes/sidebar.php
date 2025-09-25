@@ -205,6 +205,28 @@ ul li { position: relative; }
       <li><a href="add_currency.php">Add Currency</a></li>
       <li><a href="view_currency.php">View Currency</a></li>
     </ul>
+  </li>   
+  <!-- Purity -->
+        <li class="dropdown">
+    <a href="javascript:void(0);" class="dropdown-toggle">
+      <i data-lucide="users"></i>Purities 
+      <span class="arrow">▼</span>
+    </a>
+    <ul class="dropdown-menu">
+      <li><a href="add_purity.php">Add Purity</a></li>
+      <li><a href="view_purity.php">View Purity</a></li>
+    </ul>
+  </li>   
+  <!-- Weights -->
+        <li class="dropdown">
+    <a href="javascript:void(0);" class="dropdown-toggle">
+      <i data-lucide="users"></i>Weights 
+      <span class="arrow">▼</span>
+    </a>
+    <ul class="dropdown-menu">
+      <li><a href="add_weight.php">Add Weight</a></li>
+      <li><a href="view_weight.php">View Weight</a></li>
+    </ul>
   </li>      
         <!-- Gold -->
         <li class="dropdown">

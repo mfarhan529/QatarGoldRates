@@ -1,0 +1,5 @@
+
+
+
+
+Select * From gold_prices Left Join currencies ON gold_prices.currency_id=currencies.id Left Join purities ON gold_prices.purity_id=purities.id Left Join weight ON gold_prices.weight_id=weight.id;

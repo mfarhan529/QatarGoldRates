@@ -19,46 +19,85 @@ if ($currency_result && $currency_result->num_rows > 0) {
         $currencies[$c['id']] = $c['Symbol']; // map id => Symbol
     }
 }
+// ✅ Today’s Latest 24K Gold Prices (All Weights, All Currencies)
+$today_sql = "
+    SELECT g.id AS gold_id, g.currency_id, g.purity_id, g.weight_id, g.Prices, g.created_at, 
+           c.Symbol, p.name AS purity_name, w.unit AS weight_unit
+    FROM gold_prices g
+    INNER JOIN (
+        SELECT weight_id, currency_id, MAX(created_at) AS max_date
+        FROM gold_prices
+        WHERE purity_id = 1      -- ✅ Only 24K Gold
+        GROUP BY weight_id, currency_id
+    ) latest
+    ON g.weight_id   = latest.weight_id
+    AND g.currency_id = latest.currency_id
+    AND g.created_at = latest.max_date
+    LEFT JOIN currencies c ON g.currency_id = c.id
+    LEFT JOIN purities p ON g.purity_id = p.id
+    LEFT JOIN weight w ON g.weight_id = w.id
+    ORDER BY w.id ASC, g.currency_id ASC
+";
 
-// ✅ Today’s data (last 24h)
-$today_sql = "SELECT g.id AS gold_id, g.Weight, g.currency_id, g.Purity, g.Prices, g.created_at, c.Symbol
-              FROM 24k_gold g
-              LEFT JOIN currencies c ON g.currency_id = c.id
-              WHERE g.created_at >= NOW() - INTERVAL 1 DAY
-              ORDER BY g.Weight ASC, g.Purity ASC, g.currency_id ASC";
 $today_result = $conn->query($today_sql);
 
-// ✅ History data (older than 24h)
-$history_sql = "SELECT g.id AS gold_id, g.Weight, g.currency_id, g.Purity, g.Prices, g.created_at, c.Symbol
-                FROM 24k_gold g
-                LEFT JOIN currencies c ON g.currency_id = c.id
-                WHERE g.created_at < NOW() - INTERVAL 1 DAY
-                ORDER BY g.Weight ASC, g.Purity ASC, g.currency_id ASC";
-$history_result = $conn->query($history_sql);
 
-// ✅ Group rows by Weight + Purity
-function groupByWeightPurity($result) {
+
+        $history_sql = "SELECT g.id AS gold_id, g.currency_id, g.purity_id, g.weight_id, g.Prices, g.created_at, 
+                               c.Symbol, p.name AS purity_name, w.unit AS weight_unit
+                        FROM gold_prices g
+                        LEFT JOIN currencies c ON g.currency_id = c.id
+                        LEFT JOIN purities p ON g.purity_id = p.id
+                        LEFT JOIN weight w ON g.weight_id = w.id
+                        WHERE g.purity_id = 1  /* Only 24K Gold */
+                          AND c.Symbol = 'QAR'
+                        ORDER BY g.created_at DESC, w.id ASC";
+
+        $history_result = $conn->query($history_sql);
+
+        // ✅ Group History by Date
+        $history_data = [];
+        if ($history_result && $history_result->num_rows > 0) {
+            while ($row = $history_result->fetch_assoc()) {
+                $date   = date("d-M-Y", strtotime($row['created_at']));
+                $weight = $row['weight_unit'];
+
+                if (!isset($history_data[$date])) {
+                    $history_data[$date] = [
+                        'date'   => $date,
+                        'prices' => []
+                    ];
+                }
+                $history_data[$date]['prices'][$weight] = $row['Prices'];
+            }
+        }
+// today function  
+// ✅ Function to group by weight/currency
+function groupByWeightCurrency($result) {
     $data = [];
     if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
-            $key = $row['Weight'] . '-' . $row['Purity'];
-            if (!isset($data[$key])) {
-                $data[$key] = [
-                    'id' => $row['gold_id'],
-                    'Weight' => $row['Weight'],
-                    'Purity' => $row['Purity'],
+            $weight = $row['weight_unit'];
+            if (!isset($data[$weight])) {
+                $data[$weight] = [
+                    'id'     => $row['gold_id'],
+                    'weight' => $weight,
                     'prices' => []
                 ];
             }
-            $data[$key]['prices'][$row['currency_id']] = $row['Prices'];
+            $data[$weight]['prices'][$row['currency_id']] = $row['Prices'];
         }
     }
     return $data;
 }
 
-$today_data   = groupByWeightPurity($today_result);
-$history_data = groupByWeightPurity($history_result);
+$today_data = groupByWeightCurrency($today_result);
+
+// history function   
+
+
 ?>
+
 
 
 <!DOCTYPE html>
@@ -75,75 +114,66 @@ $history_data = groupByWeightPurity($history_result);
   <!-- ✅ Success message -->
   <?php if (isset($_GET['success'])): ?>
     <p class="success-msg">✅ 24k Gold rate added successfully!</p>
-  <?php endif; ?>
-
-  <!-- ✅ Today’s 24k Gold Prices -->
-  <div class="table-container">
-    <h2>📊 Today’s 24k Gold Prices</h2>
-    <table>
-      <thead>
+  <?php endif; ?><div class="table-container">
+  <h2>📊 Today’s Latest 24K Gold Prices (1 Gram)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Weight</th>
+        <?php foreach ($currencies as $symbol): ?>
+          <th><?= htmlspecialchars($symbol) ?></th>
+        <?php endforeach; ?>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php if (!empty($today_data)): ?>
+        <?php foreach ($today_data as $info): ?>
+          <tr>
+            <td><?= htmlspecialchars($info['weight']) ?></td>
+            <?php foreach ($currencies as $cid => $symbol): ?>
+              <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
+            <?php endforeach; ?>
+            <td><a href="edit_24k_gold.php?id=<?= $info['id'] ?>" title="Edit">✏️</a></td>
+          </tr>
+        <?php endforeach; ?>
+      <?php else: ?>
         <tr>
-          <th>Purity</th>
-          <th>Weight</th>
-          <?php foreach ($currencies as $symbol): ?>
-            <th><?= htmlspecialchars($symbol) ?></th>
-          <?php endforeach; ?>
-          <th>Action</th>
+          <td colspan="<?= count($currencies) + 2 ?>" style="text-align:center;">❌ No recent record found</td>
         </tr>
-      </thead>
-      <tbody>
-        <?php if (!empty($today_data)): ?>
-          <?php foreach ($today_data as $info): ?>
-            <tr>
-              <td><?= htmlspecialchars($info['Purity']) ?></td>
-              <td><?= htmlspecialchars($info['Weight']) ?></td>
-              <?php foreach ($currencies as $cid => $symbol): ?>
-                <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
-              <?php endforeach; ?>
-              <td><a href="edit_24k_gold.php?id=<?= $info['id'] ?>" title="Edit">✏️</a></td>
-            </tr>
-          <?php endforeach; ?>
-        <?php else: ?>
-          <tr><td colspan="<?= count($currencies) + 3 ?>" style="text-align:center;">❌ No records found for Today</td></tr>
-        <?php endif; ?>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- ✅ History 24k Gold Prices -->
-  <div class="table-container">
-    <h2>📜 History 24k Gold Prices</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Purity</th>
-          <th>Weight</th>
-          <?php foreach ($currencies as $symbol): ?>
-            <th><?= htmlspecialchars($symbol) ?></th>
-          <?php endforeach; ?>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php if (!empty($history_data)): ?>
-          <?php foreach ($history_data as $info): ?>
-            <tr>
-              <td><?= htmlspecialchars($info['Purity']) ?></td>
-              <td><?= htmlspecialchars($info['Weight']) ?></td>
-              <?php foreach ($currencies as $cid => $symbol): ?>
-                <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
-              <?php endforeach; ?>
-              <td><a href="edit_24k_gold.php?id=<?= $info['id'] ?>" title="Edit">✏️</a></td>
-            </tr>
-          <?php endforeach; ?>
-        <?php else: ?>
-          <tr><td colspan="<?= count($currencies) + 3 ?>" style="text-align:center;">❌ No historical data found</td></tr>
-        <?php endif; ?>
-      </tbody>
-    </table>
-  </div>
-
+      <?php endif; ?>
+    </tbody>
+  </table>
 </div>
+     <div class="table-container">
+        
+  <h2>📜 History 24K Gold Prices</h2>
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>1 Gram</th>
+                <th>1 Tola</th>
+                <th>1 Ounce</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if (!empty($history_data)): ?>
+                <?php foreach ($history_data as $info): ?>
+                  <tr>
+                    <td><?php echo htmlspecialchars($info['date']); ?></td>
+                    <td><?php echo isset($info['prices']['1 Gram']) ? 'QAR '.number_format($info['prices']['1 Gram'], 2) : '-'; ?></td>
+                    <td><?php echo isset($info['prices']['1 Tola']) ? 'QAR '.number_format($info['prices']['1 Tola'], 2) : '-'; ?></td>
+                    <td><?php echo isset($info['prices']['1 Ounce']) ? 'QAR '.number_format($info['prices']['1 Ounce'], 2) : '-'; ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <tr><td colspan="4" style="text-align:center;">❌ No historical data found</td></tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+
 
 <style>
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 0; }
