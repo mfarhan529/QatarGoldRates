@@ -1,225 +1,232 @@
 <?php
 session_start();
 
-// Check if user is logged in
+// ✅ Check if user is logged in
 if (!isset($_SESSION['admin'])) {
-    header("Location: ../"); // Redirect to login if not logged in
+    header("Location: ../");
     exit();
 }
 
 include '../includes/db.php';
+
+// ✅ Delete success alert
+if (isset($_GET['msg']) && $_GET['msg'] === 'deleted'): ?>
+  <div id="alert" style="
+        background: #4CAF50;
+        color: white;
+        padding: 12px;
+        border-radius: 6px;
+        text-align: center;
+        margin-bottom: 15px;
+        font-weight: bold;">
+        ✅ Data deleted successfully
+  </div>
+  <script>
+    setTimeout(function() {
+        var alert = document.getElementById("alert");
+        if (alert) {
+            alert.style.display = "none";
+        }
+    }, 3000);
+  </script>
+<?php endif; ?>
+
+<?php
+// ✅ Fetch all currencies
+$currencies = [];
+$currency_sql = "SELECT id, Symbol FROM currencies ORDER BY id ASC";
+$currency_result = $conn->query($currency_sql);
+
+$weight_sql = "SELECT id, unit FROM weight ORDER BY id ASC";
+$weight_result = $conn->query($weight_sql);
+
+if ($currency_result && $currency_result->num_rows > 0) {
+    while ($c = $currency_result->fetch_assoc()) {
+        $currencies[$c['id']] = $c['Symbol']; // map id => Symbol
+    }
+}
+
+// ✅ Today’s Silver Prices (last 24 hours, latest per weight+currency)
+$today_sql = "SELECT s1.id AS silver_id, s1.Prices, s1.created_at,
+                     w.unit AS weight_unit, 
+                     c.Symbol, c.id AS currency_id
+              FROM silver_prices s1
+              INNER JOIN (
+                  SELECT weight_id, currency_id, MAX(created_at) as max_date
+                  FROM silver_prices
+                  WHERE created_at >= NOW() - INTERVAL 24 HOUR
+                  GROUP BY weight_id, currency_id
+              ) s2
+              ON s1.weight_id = s2.weight_id
+              AND s1.currency_id = s2.currency_id
+              AND s1.created_at = s2.max_date
+              LEFT JOIN currencies c ON s1.currency_id = c.id
+              LEFT JOIN weight w ON s1.weight_id = w.id
+              ORDER BY w.id ASC, s1.currency_id ASC";
+
+$today_result = $conn->query($today_sql);
+
+// ✅ History Silver Prices (older than 24 hours, only QAR)
+$history_sql = "SELECT g.id AS silver_id, g.currency_id, g.weight_id, g.Prices, g.created_at, 
+                       c.Symbol, w.unit AS weight_unit
+                FROM silver_prices g
+                LEFT JOIN currencies c ON g.currency_id = c.id
+                LEFT JOIN weight w ON g.weight_id = w.id
+                WHERE c.Symbol = 'QAR'
+                  
+                ORDER BY g.created_at DESC, w.id ASC";
+
+$history_result = $conn->query($history_sql);
+
+// ✅ Group Today data
+function groupByDateWeightCurrency($result) {
+    $data = [];
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $date   = date("d-M-Y", strtotime($row['created_at']));
+            $weight = $row['weight_unit'];
+            $key = $date . "|" . $weight;
+
+            if (!isset($data[$key])) {
+                $data[$key] = [
+                    'id'     => $row['silver_id'],
+                    'date'   => $date,
+                    'weight' => $weight,
+                    'prices' => []
+                ];
+            }
+            $data[$key]['prices'][$row['currency_id']] = $row['Prices'];
+        }
+    }
+    return $data;
+}
+$today_data = groupByDateWeightCurrency($today_result);
+
+// ✅ Collect history rows
+$history_rows = [];
+if ($history_result && $history_result->num_rows > 0) {
+    while ($r = $history_result->fetch_assoc()) {
+        $history_rows[] = $r;
+    }
+}
+
+// ✅ Group history by date
+function groupHistoryByDate($rows) {
+    $data = [];
+    foreach ($rows as $row) {
+        $date = date("d-M-Y", strtotime($row['created_at']));
+        if (!isset($data[$date])) {
+            $data[$date] = [];
+        }
+        $data[$date][$row['weight_unit']] = $row['Prices'];
+    }
+    return $data;
+}
+$history_data = groupHistoryByDate($history_rows);
 ?>
-
-
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Silver Table</title>
-  <!-- <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous"> -->
-  </head>
-  <body>
+  <title>View Silver Rates</title>
+</head>
+<body>
 
-   
-    <?php
-include '../includes/sidebar.php';
-?>
- 
-<?php
-if (isset($_GET['success']) && $_GET['success'] == 1) {
-    echo '<div class="alert-success" id="successAlert">✅ Record added successfully!</div>';
-}
-// ✅ Show delete alert
-if (isset($_GET['deleted']) && $_GET['deleted'] == 1) {
-    echo '<div class="alert-danger" id="deleteAlert">🗑️ Record deleted successfully!</div>';
-}
-?>
+<?php include '../includes/sidebar.php'; ?>
+<div class="table-wrapper">
 
+  <!-- ✅ Success message -->
+  <?php if (isset($_GET['success'])): ?>
+    <p class="success-msg">✅ Silver rate added successfully!</p>
+  <?php endif; ?>
 
-
-<?php
-// ✅ Today Data (last 24 hours) - Show created_at, Quantity, Currency, Price
-$today_sql = "SELECT id, Quantity, Currency, Price, created_at 
-              FROM silver_prices 
-              WHERE created_at >= NOW() - INTERVAL 1 DAY 
-              ORDER BY created_at DESC";
-$today_result = $conn->query($today_sql);
-
-// ✅ History Data (older than 24 hours)
-$history_sql = "SELECT id, Quantity, Currency, Price, created_at 
-                FROM silver_prices
-                WHERE created_at < NOW() - INTERVAL 1 DAY 
-                ORDER BY created_at DESC";
-$history_result = $conn->query($history_sql);
-?>
-
-<style>
-.alert-success {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background-color: #28a745;
-    color: #fff;
-    padding: 15px 20px;
-    text-align: center;
-    font-weight: 600;
-    z-index: 9999;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    animation: slideDown 0.5s ease-in-out;
-}
-
-.alert-danger {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background-color: #dc3545;
-    color: #fff;
-    padding: 15px 20px;
-    text-align: center;
-    font-weight: 600;
-    z-index: 9999;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    animation: slideDown 0.5s ease-in-out;
-}
-
-
-/* Slide down animation */
-@keyframes slideDown {
-    from { transform: translateY(-100%); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-/* Fade out animation */
-@keyframes fadeOut {
-    from { opacity: 1; }
-    to { opacity: 0; transform: translateY(-20px); }
-}
-
-
-
-
-.tables-container {
-  display: block;
-  margin-left: 350px; /* space for sidebar */
-  margin-right: 20px;
-  padding: 20px;
-  width: 900px;
-}
-
-.tables-container table {
-  border-collapse: collapse;
-  width: 100%; /* full width inside container */
-  background: #fff;
-  border-radius: 8px;
-  margin-bottom: 30px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-
-.tables-container th {
-  background: #1e3a8a;
-  color: #fff;
-  padding: 10px;
-  text-align: center;
-}
-
-.tables-container td {
-  padding: 10px;
-  text-align: center;
-  border: 1px solid #ddd;
-}
-
-.delete-btn {
-  color: red;
-  cursor: pointer;
-  font-size: 18px;
-  text-decoration: none;
-}
-.delete-btn:hover {
-  color: darkred;
-}
-h2 {
-  text-align: center;
-}
-
-
-</style>
-
-
-
-
-<div class="tables-container">
   <!-- ✅ Today’s Silver Prices -->
-  <div class="today-table">
-    <h2>Today’s Silver Prices</h2>
-    <table class="table">
-      <tr>
-        <th scope="col" >Quantity</th>
-        <th scope="col">Currency</th>
-        <th scope="col">Price</th>
-        <th scope="col">Action</th>
-      </tr>
-      <?php if ($today_result->num_rows > 0) { 
-        while($row = $today_result->fetch_assoc()) { ?>
-      <tr>
-        <td><?= $row['Quantity'] ?></td>
-        <td><?= $row['Currency'] ?></td>
-        <td><?= $row['Price'] ?></td>
-     <td>
-  <a href="delete.php?id=<?= $row['id'] ?>&type=silver"
-     class="delete-btn"
-     onclick="return confirm('Are you sure you want to delete this entry?')">🗑</a>
-</td>
-
-      </tr>
-      <?php } } else { ?>
-      <tr><td colspan="4">No data available for Today</td></tr>
-      <?php } ?>
+  <div class="table-container">
+    <h2>📊 Today’s Silver Prices</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Weight</th>
+          <?php foreach ($currencies as $symbol): ?>
+            <th><?= htmlspecialchars($symbol) ?></th>
+          <?php endforeach; ?>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if (!empty($today_data)): ?>
+          <?php foreach ($today_data as $info): ?>
+            <tr>
+              <td><?= htmlspecialchars($info['date']) ?></td>
+              <td><?= htmlspecialchars($info['weight']) ?></td>
+              <?php foreach ($currencies as $cid => $symbol): ?>
+                <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
+              <?php endforeach; ?>
+              <td>
+                <a href="delete_silver.php?id=<?= $info['id'] ?>" 
+                   title="Delete" 
+                   onclick="return confirm('Are you sure you want to delete this record?');">🗑️</a>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <tr>
+            <td colspan="<?= count($currencies) + 3 ?>" style="text-align:center;">❌ No records found for Today</td>
+          </tr>
+        <?php endif; ?>
+      </tbody>
     </table>
   </div>
 
-  <!-- ✅ History Silver Prices -->
-  <div class="history-table">
-    <h2>History Silver Prices</h2>
-    <table>
-      <tr>
-        <th>Date</th>
-        <th>Quantity</th>
-        <th>Currency</th>
-        <th>Price</th>
-        <th>Action</th>
-      </tr><?php if ($history_result->num_rows > 0) { 
-    while($row = $history_result->fetch_assoc()) { 
-        // Format date into 12-Sep-2025
-        $formatted_date = date("d-M-Y", strtotime($row['created_at']));
-?>
-      <tr>
-        <td><?= $formatted_date ?></td>
-        <td><?= $row['Quantity'] ?></td>
-        <td><?= $row['Currency'] ?></td>
-        <td><?= $row['Price'] ?></td>
-        <td>
-  <a href="delete.php?id=<?= $row['id'] ?>&type=silver" 
-     class="delete-btn" 
-     onclick="return confirm('Are you sure you want to delete this entry?')">🗑</a>
-</td>
-
-      </tr>
-      <?php } } else { ?>
-      <tr><td colspan="5">No historical data available</td></tr>
-      <?php } ?>
+  <!-- 📜 History Silver Prices -->
+  <div class="table-container">
+    <h2>📜 History Silver Prices (QAR)</h2>
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>1 Gram</th>
+          <th>1 Tola</th>
+          <th>1 Kg</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if (!empty($history_data)): ?>
+          <?php foreach ($history_data as $date => $weights): ?>
+            <tr>
+              <td><?= htmlspecialchars($date) ?></td>
+              <td><?= isset($weights['1 Gram']) ? 'QAR ' . number_format($weights['1 Gram'], 2) : '-' ?></td>
+              <td><?= isset($weights['1 Tola']) ? 'QAR ' . number_format($weights['1 Tola'], 2) : '-' ?></td>
+              <td><?= isset($weights['1 Kg']) ? 'QAR ' . number_format($weights['1 Kg'], 2) : '-' ?></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <tr>
+            <td colspan="4" style="text-align:center;">❌ No historical data found</td>
+          </tr>
+        <?php endif; ?>
+      </tbody>
     </table>
   </div>
 </div>
 
-
-
-     <script>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 0; }
+  .table-wrapper { margin-left: 400px; padding: 40px 20px; width: 1000px; }
+  .table-container { background: #fff; padding: 25px; border-radius: 14px; margin-bottom: 40px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+  h2 { text-align: center; margin-bottom: 20px; color: #1e3a8a; font-size: 24px; font-weight: 700; }
+  .success-msg { text-align: center; background: #d1fae5; color: #065f46; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: #1e3a8a; color: #fff; }
+  th, td { padding: 12px 14px; border: 1px solid #ddd; text-align: center; }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  tbody tr:hover { background: #eef2ff; }
+  a { text-decoration: none; font-size: 18px; color: #1e3a8a; }
+  a:hover { color: #0d1a3a; }
+</style>
+<script>
 document.querySelectorAll('.dropdown-toggle').forEach(item => {
   item.addEventListener('click', function(e) {
     e.preventDefault();
@@ -227,22 +234,5 @@ document.querySelectorAll('.dropdown-toggle').forEach(item => {
   });
 });
 </script>
-
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-    const alerts = document.querySelectorAll("#successAlert, #deleteAlert");
-    alerts.forEach(alertBox => {
-        setTimeout(() => {
-            alertBox.style.animation = "fadeOut 0.8s forwards";
-            setTimeout(() => alertBox.remove(), 800);
-        }, 3000); // 3 seconds
-    });
-});
-</script>
-
-
-
-
-  </body>
-
-  </html>
+</body>
+</html>

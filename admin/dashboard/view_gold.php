@@ -9,6 +9,42 @@ if (!isset($_SESSION['admin'])) {
 
 include '../includes/db.php';
 
+
+// delete 
+
+
+
+  
+
+
+// ✅ Delete record if ID is provided
+ 
+
+if (isset($_GET['msg']) && $_GET['msg'] === 'deleted'): ?>
+
+  <div id="alert" style="
+        background: #4CAF50;
+        color: white;
+        padding: 12px;
+        border-radius: 6px;
+        text-align: center;
+        margin-bottom: 15px;
+        font-weight: bold;
+        ">
+        ✅ Data deleted successfully
+    </div>
+      <script>
+        // Auto-hide after 3 seconds
+        setTimeout(function() {
+            var alert = document.getElementById("alert");
+            if (alert) {
+                alert.style.display = "none";
+            }
+        }, 3000);
+    </script>
+<?php endif; ?>
+<?php
+
 // ✅ Fetch all currencies
 $currencies = [];
 // Fetch all dropdown data
@@ -169,9 +205,13 @@ $purity_links = [
             <?php foreach ($currencies as $cid => $symbol): ?>
               <td><?= isset($info['prices'][$cid]) ? number_format($info['prices'][$cid], 2) : '-' ?></td>
             <?php endforeach; ?>
-           <td>
-  <a href="delete_gold2.php?id=<?= $info['id'] ?>" title="Delete" onclick="return confirm('Are you sure you want to delete this record?');">🗑️</a>
+    <td>
+  <a href="delete_gold.php?id=<?= $info['id'] ?>" 
+     title="Delete" 
+     onclick="return confirm('Are you sure you want to delete this record?');">🗑️</a>
 </td>
+
+
 
           </tr>
         <?php endforeach; ?>
